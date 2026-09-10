@@ -1,0 +1,66 @@
+name: Collect Reito pachinko data
+
+on:
+  workflow_dispatch:
+  schedule:
+    # JST 23:30
+    # GitHub Actions cron is UTC.
+    - cron: "30 14 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reito-pachinko-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packages
+        run: pip install -r requirements.txt
+
+      - name: Collect Reito data
+        id: collect
+        continue-on-error: true
+        run: python collector.py --out data --sleep 0.35
+
+      - name: Enrich cumulative start data
+        if: steps.collect.outcome == 'success'
+        run: python enrich_total_start.py
+
+      - name: Build dashboard
+        if: steps.collect.outcome == 'success'
+        run: |
+          python merge_machine_specs.py
+          python export_current_models.py
+          python build_site.py
+          python analysis_site.py
+          python observed_history.py
+          python manual_review_candidates.py
+
+      - name: Save collected data
+        if: steps.collect.outcome == 'success'
+        run: |
+          git config user.name "reito-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add machine_specs.csv data docs
+          git diff --cached --quiet || git commit -m "Update pachinko data"
+          git push
+
+      - name: Fail workflow if collection failed
+        if: steps.collect.outcome != 'success'
+        run: |
+          echo "Collection failed or snapshot quality was insufficient."
+          exit 1
