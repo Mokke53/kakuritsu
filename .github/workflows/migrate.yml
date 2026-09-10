@@ -27,7 +27,7 @@ jobs:
         run: |
           rsync -a --delete \
             --exclude='.git/' \
-            --exclude='.github/workflows/migrate.yml' \
+            --exclude='.github/workflows/' \
             /tmp/reitoproject/ ./
 
       - name: Commit migration
