@@ -1,0 +1,73 @@
+name: One-time recent hit summary
+
+on:
+  push:
+    paths:
+      - '.github/workflows/one_time_summary.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build recent summary
+        run: |
+          python - <<'PY'
+          import csv
+          from collections import defaultdict
+          from datetime import datetime
+
+          path = 'data/daily_records.csv'
+          with open(path, encoding='utf-8-sig', newline='') as f:
+              rows = list(csv.DictReader(f))
+
+          dates = sorted({r['record_date'] for r in rows if r.get('record_date')})
+          latest = dates[-1]
+          # Use the current-layout window from Sep 10 through the latest date.
+          start = '2026-09-10'
+          window_dates = [d for d in dates if start <= d <= latest]
+
+          latest_rows = {r['machine_number']: r for r in rows if r['record_date'] == latest}
+          by_key = defaultdict(list)
+          for r in rows:
+              if r['record_date'] in window_dates:
+                  key = (r['machine_number'], r['machine_id'])
+                  by_key[key].append(r)
+
+          out = []
+          for num, lr in sorted(latest_rows.items()):
+              key = (num, lr['machine_id'])
+              hist = by_key.get(key, [])
+              hits = [int(r['big_hits'] or 0) for r in hist]
+              out.append({
+                  'machine_number': num,
+                  'machine_id': lr['machine_id'],
+                  'machine_name': lr['machine_name'],
+                  'flags': lr.get('flags',''),
+                  'window_start': start,
+                  'window_end': latest,
+                  'days_observed': len(hist),
+                  'total_big_hits': sum(hits),
+                  'avg_big_hits': round(sum(hits)/len(hits), 2) if hits else 0,
+                  'zero_days': sum(h == 0 for h in hits),
+                  'one_or_less_days': sum(h <= 1 for h in hits),
+                  'min_big_hits': min(hits) if hits else 0,
+                  'max_big_hits': max(hits) if hits else 0,
+                  'daily_hits': '|'.join(f"{r['record_date']}:{int(r['big_hits'] or 0)}" for r in sorted(hist, key=lambda x:x['record_date']))
+              })
+
+          fields = ['machine_number','machine_id','machine_name','flags','window_start','window_end','days_observed','total_big_hits','avg_big_hits','zero_days','one_or_less_days','min_big_hits','max_big_hits','daily_hits']
+          with open('data/recent_summary.csv','w',encoding='utf-8-sig',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields)
+              w.writeheader(); w.writerows(out)
+          PY
+      - name: Commit summary
+        run: |
+          git config user.name "reito-data-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/recent_summary.csv
+          git diff --cached --quiet || git commit -m "Add recent hit summary"
+          git push
