@@ -1,11 +1,11 @@
 {
   "version": "2.4",
-  "collected_on": "2026-11-18",
+  "collected_on": "2026-11-19",
   "official_units": 283,
   "collected_units": 283,
   "missing_units": 0,
   "coverage_ratio": 1.0,
-  "models": 108,
+  "models": 107,
   "model_errors": 0,
   "detail_links": 283,
   "records_processed": 283,
